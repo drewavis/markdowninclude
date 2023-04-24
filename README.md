@@ -2,6 +2,8 @@
 
 This extension allows you to specify parts of other files (or even entire files) to include in your markdown documents.  This might be useful to single source things like copyright notices, licensing information, etc, or to include snippets of live code.  This works in a similar way to Doxygen's [\\snippet command](https://www.doxygen.nl/manual/commands.html#cmdsnippet), or Sphinx's [literalinclude directive](https://chiplicity.readthedocs.io/en/latest/Using_Sphinx/ShowingCodeExamplesInSphinx.html#literalinclude-directive).  The primary difference is that with this extension the text is included in the document at edit time instead of at output rendering time.
 
+![Insert Exaple](insert_update.gif)
+
 ## Features
 
 You can include snippets in your markdown file using the following syntax:
@@ -10,9 +12,17 @@ You can include snippets in your markdown file using the following syntax:
 <!-- include:filename#snippetname-->
 ```
 
-> Note: The command `Markdown Include: Insert Include` inserts a template snippet include.
+The command `Markdown: Insert Include` inserts a template snippet include.
 
 If no path is provided, the filename is expected to be in the same directory as the markdown file.  You can specify a relative path.
+
+The command `Markdown: Update Includes` updates all the snippet includes in the current document.
+
+The setting "Update Includes On Save" updates all the snippet includes when the current document is saved
+
+![](update_on_save.png)
+
+The command `Markdown: Update Workspace` updates all the snippet includes in all markdown documents in the workspace.  Note that this command does not report any problems with snippets, such as missing files or snippet names.
 
 The target file should have a snippet defined as such:
 
@@ -136,7 +146,7 @@ The update workspace command works, but does not report any errors.
 ## Release Notes
 
 
-### 0.0.1
+### 1.0.0
 
 Initial release Markdown Snippet Include!
 

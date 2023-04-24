@@ -2,7 +2,7 @@
   "name": "markdownsnippetinclude",
   "displayName": "Markdown Snippet Include",
   "description": "Include snippets from other files in your markdown files",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "engines": {
     "vscode": "^1.76.0"
   },
@@ -28,15 +28,15 @@
     "commands": [
       {
         "command": "markdownsnippetinclude.updateincludes",
-        "title": "Markdown Include: Update Includes"
+        "title": "Markdown: Update Includes"
       },
       {
         "command": "markdownsnippetinclude.insertinclude",
-        "title": "Markdown Include: Insert Include"
+        "title": "Markdown: Insert Include"
       },
       {
         "command": "markdownsnippetinclude.updateWorkspace",
-        "title": "Markdown Include: Update Workspace"
+        "title": "Markdown: Update Workspace Includes"
       }
     ]
   },

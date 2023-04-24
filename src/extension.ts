@@ -100,7 +100,7 @@ class SnippetInfo {
 let supportedFiles: Array<any> = [
 	{
 		files: ["md"],
-		regex: '<!--\\s*snippet:${snipName}-->(.*?)<!--\\s*\/snippet-->',
+		regex: '<!--\\s*snippet:\\s*${snipName}\\s*-->(.*?)<!--\\s*\/snippet\\s*-->',
 		addCodeBlock: false
 	},
 	{
@@ -127,7 +127,7 @@ class IncludeManager {
 	private _includeSnippet: string = "<!-- include: -->\n<!-- /include-->";
 
 
-	private _includeRegExp: RegExp = /^<!--\s*include:\s*([^>]*)-->/;
+	private _includeRegExp: RegExp = /^<!--\s*include:\s*([^>]*)\s*-->/;
 	private _includeEnd: RegExp = /^<!--\s*\/include\s*-->/;
 	// public markerArray = vscode.workspace.getConfiguration('mdsnip').get("snippetMarkers", new Array<string>);
 	// console.log(`config: ${JSON.stringify(configuration.snippetMarkers)}`);
@@ -197,7 +197,7 @@ class IncludeManager {
 					if (includePath.includes('#')) {
 						let arr = includePath.split('#');
 						includePath = arr[0];
-						snipName = arr[1];
+						snipName = arr[1].trim();
 						snipInfo.fileName = includePath;
 						snipInfo.snippetName = snipName;
 
