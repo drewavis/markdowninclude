@@ -4,10 +4,6 @@ import * as vscode from 'vscode';
 import { readFileSync, existsSync, writeFileSync } from 'fs';
 import * as path from 'path';
 
-async function sleep(ms: number) {
-	return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
