@@ -114,6 +114,11 @@ let supportedFiles: Array<any> = [
 		files: ["ms", "mxs"],
 		regex: '^--\\s*\\[${snipName}\\](.*)^--\\s*\\[${snipName}\\]',
 		addCodeBlock: true
+	},
+	{
+		files: ["go", "dart"],
+		regex: '\/\/\\s*\\[${snipName}\\](.*?)\/\/\\s*\\[${snipName}\\]',
+		addCodeBlock: true
 	}
 
 ];
