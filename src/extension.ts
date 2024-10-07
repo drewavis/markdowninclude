@@ -77,14 +77,18 @@ export function deactivate() { }
 
 class SnippetInfo {
 	lineStart: number;
+	columnStart: number;
 	lineEnd: number;
+	columnEnd: number;
 	fileName: string;
 	snippetName: string;
 	snippetContent: string;
 
 	constructor() {
 		this.lineStart = -1;
+		this.columnStart = -1;
 		this.lineEnd = -1;
+		this.columnEnd = -1;
 		this.fileName = "";
 		this.snippetName = "";
 		this.snippetContent = "";
@@ -128,8 +132,8 @@ class IncludeManager {
 	private _includeSnippet: string = "<!-- include: -->\n<!-- /include-->";
 
 
-	private _includeRegExp: RegExp = /^<!--\s*include:\s*([^>]*)\s*-->/;
-	private _includeEnd: RegExp = /^<!--\s*\/include\s*-->/;
+	private _includeRegExp: RegExp = /(<!--\s*include:\s*)([^>]*)(\s*-->)/;
+	private _includeEnd: RegExp = /<!--\s*\/include\s*-->/;
 	// public markerArray = vscode.workspace.getConfiguration('mdsnip').get("snippetMarkers", new Array<string>);
 	// console.log(`config: ${JSON.stringify(configuration.snippetMarkers)}`);
 
@@ -138,8 +142,6 @@ class IncludeManager {
 
 		vscode.window.activeTextEditor?.insertSnippet(new vscode.SnippetString(this._includeSnippet));
 	}
-
-
 
 	getFileSupportRegex(ext: string) {
 		let snippetRegex: string = "";
@@ -156,257 +158,363 @@ class IncludeManager {
 	}
 
 	updateAllSnippets(editor: vscode.TextEditor, snips: Array<SnippetInfo>): void {
+		// Create a sorted copy of snippets in reverse order to prevent position conflicts
+		const sortedSnips = snips.slice().sort((a, b) => {
+			if (a.lineStart !== b.lineStart) {
+				return b.lineStart - a.lineStart; // Descending line order
+			}
+			return b.columnStart - a.columnStart; // Descending column order
+		});
+	
 		editor.edit(editBuilder => {
-			for (var snip of snips.reverse()) {
-				if (snip.lineStart + 1 === snip.lineEnd) {
-					// insert
-					console.log(`inserting${snip.snippetName} at ${snip.lineEnd}`);
-					editBuilder.insert(new vscode.Position(snip.lineEnd, 0), snip.snippetContent);
+			for (const snip of sortedSnips) {
+				const startPos = new vscode.Position(snip.lineStart, snip.columnStart);
+				const endPos = new vscode.Position(snip.lineEnd, snip.columnEnd);
+				const range = new vscode.Range(startPos, endPos);
+	
+				if (snip.lineStart === snip.lineEnd && snip.columnStart === snip.columnEnd) {
+					// Insert snippet at the starting position
+					console.log(`Inserting "${snip.snippetName}" at (${snip.lineStart}, ${snip.columnStart})`);
+					editBuilder.insert(startPos, snip.snippetContent);
 				} else {
-					// replace
-					console.log(`replacing${snip.snippetName} at ${snip.lineStart}-${snip.lineEnd}`);
-					editBuilder.replace(new vscode.Range(new vscode.Position(snip.lineStart + 1, 0), new vscode.Position(snip.lineEnd, 0)), snip.snippetContent);
+					// Replace a range of text with the snippet
+					console.log(`Replacing "${snip.snippetName}" from (${snip.lineStart}, ${snip.columnStart}) to (${snip.lineEnd}, ${snip.columnEnd})`);
+					editBuilder.replace(range, snip.snippetContent);
 				}
-
 			}
 		}).then(success => {
-			console.log(`edit succeded: ${success}`);
-
+			if (success) {
+				console.log('Edit succeeded.');
+				vscode.window.showInformationMessage('Snippets updated successfully.');
+			} else {
+				console.warn('Edit failed.');
+				vscode.window.showWarningMessage('Failed to update snippets.');
+			}
+		}, error => {
+			console.error(`Edit encountered an error: ${error}`);
+			vscode.window.showErrorMessage(`Error updating snippets: ${error.message}`);
 		});
-
 	}
-
+	
 	findAllSnippetSections(doc: vscode.TextDocument, problems: vscode.DiagnosticCollection): Array<SnippetInfo> {
-		let snippetInfos: Array<SnippetInfo> = new Array<SnippetInfo>;
-		let snipInfo: SnippetInfo = new SnippetInfo();
-
-		// clear existing problems
+		let snippetInfos: Array<SnippetInfo> = [];
+		let snipInfo: SnippetInfo | null = null; // Use null to indicate no active snippet
+	
+		// Clear existing problems
 		let probs: Array<vscode.Diagnostic> = [];
-
-		for (var linenum = 0; linenum < doc.lineCount; linenum++) {
-			let lineText: string = doc.lineAt(linenum).text.trim();
-			if (this._includeRegExp.test(lineText)) {
-				// we have started a new snippet
-
-				snipInfo.lineStart = linenum;
-				let res = this._includeRegExp.exec(lineText);
-
-				if (res && res.length > 1) {
-					let includePath: string = res[1];
-					// vscode.window.showInformationMessage('found include:' + includePath);
-					let snipName = "";
-					if (includePath.includes('#')) {
-						let arr = includePath.split('#');
-						includePath = arr[0];
-						snipName = arr[1].trim();
-						snipInfo.fileName = includePath;
-						snipInfo.snippetName = snipName;
-
-					}
-					// include the whole thing
-					else {
-						snipInfo.fileName = includePath;
-						snipInfo.snippetName = "all";
-					}
-					// console.log("snip: " + snipName);
-					let docPath = doc.fileName;
-					//const file = readFileSync(includePath);
-					includePath = path.resolve(path.dirname(docPath), includePath);
-					// console.log(includePath);
-					let ext = snipInfo.fileName.substring(snipInfo.fileName.lastIndexOf('.'));
-
-					let fileSupportOptions = this.getFileSupportRegex(ext);
-					let snipStr: string = fileSupportOptions.snippetRegex;
-
-					if (snipStr === "") {
-						probs.push({
-							code: '',
-							message: `File type not supported: ${includePath}`,
-							severity: vscode.DiagnosticSeverity.Error,
-							source: 'Markdown Snippet',
-							range: new vscode.Range(new vscode.Position(linenum, 0), new vscode.Position(linenum, lineText.length))
-						});
-					}
-
-
-					else if (!existsSync(includePath)) {
-						probs.push({
-							code: '',
-							message: `File not found: ${includePath}`,
-							severity: vscode.DiagnosticSeverity.Error,
-							source: 'Markdown Snippet',
-							range: new vscode.Range(new vscode.Position(linenum, 0), new vscode.Position(linenum, lineText.length))
-						});
-					}
-
-					// we can proceed and read the file
-					else {
-						const content = readFileSync(includePath, 'utf-8');
-
-						// console.log(content);
-						snipStr = snipStr.replaceAll("${snipName}", snipName);
-						let snip = new RegExp(snipStr, "sm");
-
-						res = snip.exec(content);
-						if (res && res.length > 1) {
-							let snippetStr = res[1];
-							let snipCodeFence = "";
-							let snipCodeFenceEnd = "\n";
-							if (fileSupportOptions.addCodeBlock) {
-								snipCodeFence = '```' + ext.slice(1) + '\n';
-								snipCodeFenceEnd = '\n```\n';
-							}
-							// console.log(`snippet: ${snippetStr}`);
-							snipInfo.snippetContent = `${snipCodeFence}${snippetStr.trim()}${snipCodeFenceEnd}`;
-						}
-						else {
-							//  no snip name
-							probs.push({
-								code: '',
-								message: `snippet name ${snipName} not found in file: ${includePath}`,
-								severity: vscode.DiagnosticSeverity.Error,
-								source: 'Markdown Snippet',
-								range: new vscode.Range(new vscode.Position(linenum, 0), new vscode.Position(linenum, lineText.length))
-							});
-
-
-						}
-					}
+	
+		for (let linenum = 0; linenum < doc.lineCount; linenum++) {
+			let line = doc.lineAt(linenum);
+			let lineText: string = line.text; // Use full line text to get accurate column positions
+	
+			// Check for snippet inclusion start
+			let includeMatch = this._includeRegExp.exec(lineText);
+			if (includeMatch) {
+				// Initialize a new SnippetInfo object
+				snipInfo = {
+					snippetName: "",
+					snippetContent: "",
+					fileName: "",
+					lineStart: linenum,
+					columnStart: includeMatch.index + includeMatch[0].length, // Capture the starting column
+					lineEnd: linenum,    // Temporary, will be updated when end is found
+					columnEnd: includeMatch.index + includeMatch[0].length, // Temporary
+				};
+	
+				// Extract include path from the regex capture group
+				let includePath: string = includeMatch[2].trim();
+	
+				let snipName = "";
+				if (includePath.includes('#')) {
+					let arr = includePath.split('#');
+					includePath = arr[0].trim();
+					snipName = arr[1].trim();
+					snipInfo.fileName = includePath;
+					snipInfo.snippetName = snipName;
+				} else {
+					snipInfo.fileName = includePath;
+					snipInfo.snippetName = "all";
 				}
-
+	
+				// Resolve the full path relative to the document
+				let docPath = doc.fileName;
+				includePath = path.resolve(path.dirname(docPath), includePath);
+	
+				let ext = path.extname(snipInfo.fileName);
+	
+				let fileSupportOptions = this.getFileSupportRegex(ext);
+				let snipStr: string = fileSupportOptions.snippetRegex;
+	
+				if (snipStr === "") {
+					probs.push({
+						code: '',
+						message: `File type not supported: ${includePath}`,
+						severity: vscode.DiagnosticSeverity.Error,
+						source: 'Markdown Snippet',
+						range: new vscode.Range(
+							new vscode.Position(linenum, 0),
+							new vscode.Position(linenum, lineText.length)
+						)
+					});
+					snipInfo = null; // Reset as we cannot proceed
+					continue; // Move to next line
+				}
+	
+				if (!existsSync(includePath)) {
+					probs.push({
+						code: '',
+						message: `File not found: ${includePath}`,
+						severity: vscode.DiagnosticSeverity.Error,
+						source: 'Markdown Snippet',
+						range: new vscode.Range(
+							new vscode.Position(linenum, 0),
+							new vscode.Position(linenum, lineText.length)
+						)
+					});
+					snipInfo = null; // Reset as we cannot proceed
+					continue; // Move to next line
+				}
+	
+				// Read and process the snippet file
+				const content = readFileSync(includePath, 'utf-8');
+	
+				snipStr = snipStr.replaceAll("${snipName}", snipName);
+				let snipRegex = new RegExp(snipStr, "sm");
+	
+				let snippetMatch = snipRegex.exec(content);
+				if (snippetMatch && snippetMatch.length > 1) {
+					let snippetStr = snippetMatch[1];
+					let snipCodeFence = "";
+					let snipCodeFenceEnd = "";
+					if (fileSupportOptions.addCodeBlock) {
+						snipCodeFence = '```' + ext.slice(1) + '\n';
+						snipCodeFenceEnd = '\n```\n';
+					}
+					snipInfo.snippetContent = `${snipCodeFence}${snippetStr}${snipCodeFenceEnd}`;
+				} else {
+					// Snippet name not found in the file
+					probs.push({
+						code: '',
+						message: `Snippet name "${snipName}" not found in file: ${includePath}`,
+						severity: vscode.DiagnosticSeverity.Error,
+						source: 'Markdown Snippet',
+						range: new vscode.Range(
+							new vscode.Position(linenum, 0),
+							new vscode.Position(linenum, lineText.length)
+						)
+					});
+					snipInfo = null; // Reset as snippet not found
+					continue; // Move to next line
+				}
+	
 			}
-			else if (this._includeEnd.test(lineText)) {
-				// we're at the end of a include section
+	
+			// Check for snippet inclusion end
+			let includeEndMatch = this._includeEnd.exec(lineText);
+			if (includeEndMatch && snipInfo) {
+				// Set the end line and column
 				snipInfo.lineEnd = linenum;
+				snipInfo.columnEnd = includeEndMatch.index;
+	
+				// Add the completed SnippetInfo to the array
 				snippetInfos.push(snipInfo);
-				snipInfo = new SnippetInfo();
+				snipInfo = null; // Reset for the next snippet
+				continue; // Move to next line
 			}
+	
+			// Optionally, handle lines within a snippet section if needed
+			// For example, if snippets can span multiple lines with content in between
 		}
+	
+		// Handle unclosed snippet sections
+		if (snipInfo) {
+			probs.push({
+				code: '',
+				message: `Snippet section starting at line ${snipInfo.lineStart + 1} is not closed.`,
+				severity: vscode.DiagnosticSeverity.Error,
+				source: 'Markdown Snippet',
+				range: new vscode.Range(
+					new vscode.Position(snipInfo.lineStart, snipInfo.columnStart),
+					new vscode.Position(snipInfo.lineStart, snipInfo.columnStart + 1)
+				)
+			});
+		}
+	
+		// Set the collected diagnostics
 		problems.set(doc.uri, probs);
-
+	
 		return snippetInfos;
 	} // end findAllSnippetSections
 
 	// This is like the findAllSnippetSections() above, except it works on a file path rather than a
 	// vscode.TextDocument.  This allows us to read through a series of files in the workspace and update them
 	// Downside: we don't have access to the editor problems list
-	findAllSnippetsAndUpdateFileSilently(filePath: vscode.Uri,): boolean {
-		let snippetInfos: Array<SnippetInfo> = new Array<SnippetInfo>;
-		let snipInfo: SnippetInfo = new SnippetInfo();
-		let content = readFileSync(filePath.fsPath);
-
-		let lines = content.toString().split('\n');
-		for (var linenum = 0; linenum < lines.length; linenum++) {
-			let lineText: string = lines[linenum].trim();
-			if (this._includeRegExp.test(lineText)) {
-				// we have started a new snippet
-
-				snipInfo.lineStart = linenum;
-				let res = this._includeRegExp.exec(lineText);
-
-				if (res && res.length > 1) {
-					let includePath: string = res[1];
-					// vscode.window.showInformationMessage('found include:' + includePath);
-					let snipName = "";
-					if (includePath.includes('#')) {
-						let arr = includePath.split('#');
-						includePath = arr[0];
-						snipName = arr[1];
-						snipInfo.fileName = includePath;
-						snipInfo.snippetName = snipName;
-
-					}
-					// include the whole thing
-					else {
-						snipInfo.fileName = includePath;
-						snipInfo.snippetName = "all";
-					}
-					// console.log("snip: " + snipName);
-
-					//const file = readFileSync(includePath);
-					includePath = path.resolve(path.dirname(filePath.fsPath), includePath);
-					// console.log(includePath);
-					let ext = snipInfo.fileName.substring(snipInfo.fileName.lastIndexOf('.'));
-
-					let fileSupportOptions = this.getFileSupportRegex(ext);
-					let snipStr: string = fileSupportOptions.snippetRegex;
-
-					if (snipStr === "") {
-
-						// file type not supported
-					}
-
-
-					else if (!existsSync(includePath)) {
-						// file not found
-					}
-
-					// we can proceed and read the file
-					else {
-
-						const content = readFileSync(includePath, 'utf-8');
-
-						snipStr = snipStr.replaceAll("${snipName}", snipName);
-						let snip = new RegExp(snipStr, "sm");
-
-						// console.log("regex: " + _snip.source);
-
-						res = snip.exec(content);
-						if (res && res.length > 1) {
-							let snippetStr = res[1];
-							let snipCodeFence = "";
-							let snipCodeFenceEnd = "\n";
-							if (fileSupportOptions.addCodeBlock) {
-								snipCodeFence = '```' + ext.slice(1) + '\n';
-								snipCodeFenceEnd = '\n```\n';
-							}
-							// console.log(`snippet: ${snippetStr}`);
-							snipInfo.snippetContent = `${snipCodeFence}${snippetStr.trim()}${snipCodeFenceEnd}`;
-						}
-
-						else {
-							//  no snip name
-
-
-						}
-					}
+	findAllSnippetsAndUpdateFileSilently(filePath: vscode.Uri): boolean {
+		let snippetInfos: Array<SnippetInfo> = [];
+		let snipInfo: SnippetInfo | null = null; // Use null to indicate no active snippet
+		let content = readFileSync(filePath.fsPath, 'utf-8');
+	
+		let lines = content.split('\n');
+	
+		for (let linenum = 0; linenum < lines.length; linenum++) {
+			let lineText: string = lines[linenum]; // Use full line text to get accurate column positions
+	
+			// Check for snippet inclusion start
+			let includeMatch = this._includeRegExp.exec(lineText);
+			if (includeMatch) {
+				// Handle overlapping snippets
+				if (snipInfo) {
+					// Previous snippet was not closed
+					// Optionally, log or handle this scenario
+					// For this example, we'll skip starting a new snippet until the previous is closed
+					console.error(`Snippet section starting at line ${snipInfo.lineStart + 1} is not closed before starting a new one.`);
+					// Optionally, reset snipInfo
+					snipInfo = null;
 				}
-
+	
+				// Initialize a new SnippetInfo object
+				snipInfo = {
+					snippetName: "",
+					snippetContent: "",
+					fileName: "",
+					lineStart: linenum,
+					columnStart: includeMatch.index + includeMatch[0].length, // Capture the starting column
+					lineEnd: linenum,    // Temporary, will be updated when end is found
+					columnEnd: includeMatch.index + includeMatch[0].length// Temporary
+				};
+	
+				// Extract include path from the regex capture group
+				let includePath: string = includeMatch[2].trim();
+	
+				let snipName = "";
+				if (includePath.includes('#')) {
+					let arr = includePath.split('#');
+					includePath = arr[0].trim();
+					snipName = arr[1].trim();
+					snipInfo.fileName = includePath;
+					snipInfo.snippetName = snipName;
+				} else {
+					snipInfo.fileName = includePath;
+					snipInfo.snippetName = "all";
+				}
+	
+				// Resolve the full path relative to the document
+				let docPath = filePath.fsPath;
+				includePath = path.resolve(path.dirname(docPath), includePath);
+	
+				let ext = path.extname(snipInfo.fileName);
+	
+				let fileSupportOptions = this.getFileSupportRegex(ext);
+				let snipStr: string = fileSupportOptions.snippetRegex;
+	
+				if (snipStr === "") {
+					// File type not supported
+					console.error(`File type not supported: ${includePath}`);
+					// Optionally, log or handle this scenario
+					snipInfo = null; // Reset as we cannot proceed
+					continue; // Move to next line
+				}
+	
+				if (!existsSync(includePath)) {
+					// File not found
+					console.error(`File not found: ${includePath}`);
+					// Optionally, log or handle this scenario
+					snipInfo = null; // Reset as we cannot proceed
+					continue; // Move to next line
+				}
+	
+				// Read and process the snippet file
+				const snippetFileContent = readFileSync(includePath, 'utf-8');
+	
+				snipStr = snipStr.replaceAll("${snipName}", snipName);
+				let snipRegex = new RegExp(snipStr, "sm");
+	
+				let snippetMatch = snipRegex.exec(snippetFileContent);
+				if (snippetMatch && snippetMatch.length > 1) {
+					let snippetStr = snippetMatch[1];
+					let snipCodeFence = "";
+					let snipCodeFenceEnd = "";
+					if (fileSupportOptions.addCodeBlock) {
+						snipCodeFence = '```' + ext.slice(1) + '\n';
+						snipCodeFenceEnd = '\n```\n';
+					}
+					snipInfo.snippetContent = `${snipCodeFence}${snippetStr}${snipCodeFenceEnd}`;
+				} else {
+					// Snippet name not found in the file
+					console.error(`Snippet name "${snipName}" not found in file: ${includePath}`);
+					// Optionally, log or handle this scenario
+					snipInfo = null; // Reset as snippet not found
+					continue; // Move to next line
+				}
+	
+				// Continue to next line to find the end of the snippet section
+				continue;
 			}
-			else if (this._includeEnd.test(lineText)) {
-				// we're at the end of a include section
+	
+			// Check for snippet inclusion end
+			let includeEndMatch = this._includeEnd.exec(lineText);
+			if (includeEndMatch && snipInfo) {
+				// Set the end line and column
 				snipInfo.lineEnd = linenum;
+				snipInfo.columnEnd = includeEndMatch.index;
+	
+				// Add the completed SnippetInfo to the array
 				snippetInfos.push(snipInfo);
-				snipInfo = new SnippetInfo();
+				snipInfo = null; // Reset for the next snippet
+				continue; // Move to next line
+			}
+	
+			// Optionally, handle lines within a snippet section if needed
+			// For example, if snippets can span multiple lines with content in between
+		}
+	
+		// Handle unclosed snippet sections
+		if (snipInfo) {
+			console.error(`Snippet section starting at line ${snipInfo.lineStart + 1} is not closed.`);
+			// Optionally, handle this scenario
+		}
+	
+		// Process the snippets in reverse order to avoid affecting subsequent positions
+		for (let snip of snippetInfos.reverse()) {
+			if (snip.lineStart === snip.lineEnd) {
+				// Snippet start and end are on the same line
+				// Replace the text between columnStart and columnEnd with snippetContent
+				let line = lines[snip.lineStart];
+				let before = line.substring(0, snip.columnStart);
+				let after = line.substring(snip.columnEnd);
+				lines[snip.lineStart] = before + snip.snippetContent.trim() + after;
+				console.log(`Replacing "${snip.snippetName}" on line ${snip.lineStart + 1} at columns ${snip.columnStart}-${snip.columnEnd}`);
+			} else {
+				// Snippet spans multiple lines
+				// Replace from columnStart of lineStart to columnEnd of lineEnd
+				let firstLine = lines[snip.lineStart];
+				let lastLine = lines[snip.lineEnd];
+	
+				let before = firstLine.substring(0, snip.columnStart);
+				let after = lastLine.substring(snip.columnEnd);
+	
+				// Replace the lines between lineStart and lineEnd with snippetContent
+				// Include the modified first and last lines with before and after
+				let newSnippetLines = snip.snippetContent.trim().split('\n');
+	
+				// Merge the before part, newSnippetLines, and after part
+				let mergedLines = before + newSnippetLines[0];
+				if (newSnippetLines.length > 1) {
+					mergedLines += '\n' + newSnippetLines.slice(1).join('\n');
+				}
+				mergedLines += after;
+	
+				// Remove the lines to be replaced and insert the merged lines
+				lines.splice(snip.lineStart, snip.lineEnd - snip.lineStart + 1, mergedLines);
+				console.log(`Replacing "${snip.snippetName}" from line ${snip.lineStart + 1} to line ${snip.lineEnd + 1}`);
 			}
 		}
-
-		// why don't we just do the replace here?
-
-		for (var snip of snippetInfos.reverse()) {
-
-			if (snip.lineStart + 1 === snip.lineEnd) {
-				// insert
-				console.log(`inserting${snip.snippetName} at ${snip.lineEnd}`);
-				lines.splice(snip.lineEnd, 0, snip.snippetContent.trim());
-			}
-
-			else {
-				// replace
-				console.log(`replacing${snip.snippetName} at ${snip.lineStart}-${snip.lineEnd}`);
-				lines.splice(snip.lineStart + 1, (snip.lineEnd-snip.lineStart -1), snip.snippetContent.trim());
-				
-			}
-		}
-
-		// write the file
-		writeFileSync(filePath.fsPath, lines.join('\n') );
-
+	
+		// Write the modified content back to the file
+		writeFileSync(filePath.fsPath, lines.join('\n'), 'utf-8');
+	
 		return true;
-
-	} // end findAllSnippetSectionsFile
-
-
+	} // end findAllSnippetsAndUpdateFileSilently
 
 }
 
