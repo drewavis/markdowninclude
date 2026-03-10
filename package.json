@@ -2,7 +2,7 @@
   "name": "markdownsnippetinclude",
   "displayName": "Markdown Snippet Include",
   "description": "Include snippets from other files in your markdown files",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "engines": {
     "vscode": "^1.76.0"
   },

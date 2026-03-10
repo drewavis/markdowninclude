@@ -40,9 +40,9 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	let disposable3 = vscode.commands.registerCommand('markdownsnippetinclude.updateWorkspace', async () => {
-		const files = await vscode.workspace.findFiles('*.md');
+		const files = await vscode.workspace.findFiles('**/*.md');
 		files.forEach(async file => {
-			console.log(file.toString());
+			// console.log(file.toString());
 			// we can't open vscode.TextDocuments/Editors for each of these, that creates a flashing UI mess
 			// instead, let's just silently work on all the files and hope for the best
 			includeMgr.findAllSnippetsAndUpdateFileSilently(file);
@@ -306,12 +306,12 @@ class IncludeManager {
 
 				if (res && res.length > 1) {
 					let includePath: string = res[1];
-					// vscode.window.showInformationMessage('found include:' + includePath);
+					console.log('found include:' + includePath);
 					let snipName = "";
 					if (includePath.includes('#')) {
 						let arr = includePath.split('#');
 						includePath = arr[0];
-						snipName = arr[1];
+						snipName = arr[1].trim();
 						snipInfo.fileName = includePath;
 						snipInfo.snippetName = snipName;
 
@@ -321,11 +321,11 @@ class IncludeManager {
 						snipInfo.fileName = includePath;
 						snipInfo.snippetName = "all";
 					}
-					// console.log("snip: " + snipName);
+					console.log("snip: " + snipName);
 
 					//const file = readFileSync(includePath);
 					includePath = path.resolve(path.dirname(filePath.fsPath), includePath);
-					// console.log(includePath);
+					console.log(includePath);
 					let ext = snipInfo.fileName.substring(snipInfo.fileName.lastIndexOf('.'));
 
 					let fileSupportOptions = this.getFileSupportRegex(ext);
